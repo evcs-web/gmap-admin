@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GMAP Pulse — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Karla:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg:#FBF8F2; --surface:#FFFFFF; --ink:#26332C; --muted:#6B7A72;
+    --accent:#3E7C6F; --accent-dark:#2C5C52; --warm:#EFA13B; --warm-soft:#FCEBD1;
+    --line:#E7E1D3; --sky:#DCEAE5; --danger:#C1583F;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:'Karla',sans-serif; }
+  .hidden{ display:none !important; }
+
+  /* ---------- sign-in gate ---------- */
+  #signInView{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .signin-card{
+    background:var(--surface); border-radius:24px; padding:40px 32px; max-width:380px; width:100%;
+    text-align:center; border:1px solid var(--line); box-shadow:0 18px 40px -14px rgba(38,51,44,.16);
+  }
+  .signin-emoji{ font-size:2.4rem; margin-bottom:10px; }
+  .signin-title{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 8px; }
+  .signin-sub{ color:var(--muted); font-size:.92rem; margin:0 0 24px; line-height:1.5; }
+  #gsiButtonSlot{ display:flex; justify-content:center; }
+  .signin-error{ color:var(--danger); font-size:.85rem; margin-top:16px; line-height:1.5; }
+
+  /* ---------- admin dashboard (unchanged from prior build) ---------- */
+  #adminView{ padding:28px 20px 60px; }
+  .wrap{ max-width:920px; margin:0 auto; }
+  .header{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:28px; flex-wrap:wrap; }
+  .admin-title{ font-family:'Fredoka', sans-serif; font-weight:600; font-size:1.9rem; margin:0 0 6px; color:var(--ink); }
+  .subtitle{ color:var(--muted); font-size:.95rem; margin:0; }
+  .user-chip{ color:var(--muted); font-size:.82rem; margin-top:4px; }
+  .user-chip button{ background:none; border:none; color:var(--accent); font-weight:700; cursor:pointer; font-size:.82rem; padding:0; margin-left:8px; }
+  .refresh-btn{
+    background:var(--surface); border:1.5px solid var(--line); color:var(--ink); font-family:'Karla',sans-serif;
+    font-weight:700; font-size:.88rem; padding:10px 16px; border-radius:12px; cursor:pointer;
+    display:flex; align-items:center; gap:8px; transition:border-color .15s ease, transform .1s ease;
+  }
+  .refresh-btn:hover{ border-color:var(--accent); }
+  .refresh-btn:active{ transform:scale(.97); }
+  .refresh-btn.spinning .spin-icon{ animation:spin .7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .pulse-hero{
+    background:var(--accent); color:#fff; border-radius:24px; padding:28px 30px; margin-bottom:22px;
+    display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;
+  }
+  .pulse-left{ display:flex; align-items:center; gap:18px; }
+  .pulse-emoji{ font-size:2.6rem; line-height:1; }
+  .pulse-number{ font-family:'Fredoka',sans-serif; font-size:2.4rem; font-weight:600; line-height:1; }
+  .pulse-label{ font-size:.85rem; opacity:.85; margin-top:4px; }
+  .pulse-right{ text-align:right; }
+  .response-count{ font-family:'Fredoka',sans-serif; font-size:1.5rem; font-weight:600; }
+  .response-target{ font-size:.82rem; opacity:.85; }
+  .target-track{ width:180px; height:6px; border-radius:999px; background:rgba(255,255,255,.3); margin-top:8px; overflow:hidden; }
+  .target-fill{ height:100%; background:#fff; border-radius:999px; transition:width .5s ease; }
+
+  .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }
+  @media (max-width:720px){ .grid-2{ grid-template-columns:1fr; } }
+
+  .admin-card{ background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:24px; margin-bottom:18px; }
+  .card-title{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:1.1rem; margin:0 0 4px; }
+  .card-sub{ color:var(--muted); font-size:.85rem; margin:0 0 18px; }
+
+  .avg-row{ display:flex; align-items:baseline; gap:10px; margin-bottom:18px; }
+  .avg-number{ font-family:'Fredoka',sans-serif; font-size:2.2rem; font-weight:600; color:var(--accent); }
+  .avg-out-of{ color:var(--muted); font-size:.85rem; }
+
+  .bar-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .bar-emoji{ width:26px; text-align:center; font-size:1.1rem; flex-shrink:0; }
+  .bar-label{ width:150px; flex-shrink:0; font-size:.85rem; color:var(--ink); font-weight:600; }
+  .bar-track{ flex:1; height:12px; border-radius:999px; background:var(--sky); overflow:hidden; }
+  .bar-fill{ height:100%; border-radius:999px; background:var(--accent); transition:width .5s ease; }
+  .bar-count{ width:64px; text-align:right; flex-shrink:0; font-size:.8rem; color:var(--muted); font-weight:600; }
+
+  .highlights-list{ display:flex; flex-direction:column; gap:12px; max-height:520px; overflow-y:auto; }
+  .highlight-card{ background:var(--warm-soft); border-radius:14px; padding:14px 16px; font-size:.92rem; line-height:1.5; color:var(--ink); }
+  .highlight-meta{ display:block; margin-top:8px; font-size:.75rem; color:var(--muted); font-weight:600; }
+  .empty-state{ color:var(--muted); font-size:.9rem; padding:20px 4px; text-align:center; }
+  .loading{ text-align:center; padding:60px 0; color:var(--muted); }
+  .error-banner{ background:#FBE8E2; color:#9B3A22; border-radius:14px; padding:14px 18px; font-size:.88rem; margin-bottom:18px; }
+
+  .trend-week{ padding:14px 0; border-bottom:1px solid var(--line); }
+  .trend-week:last-child{ border-bottom:none; padding-bottom:0; }
+  .trend-week-label{ font-weight:700; font-size:.9rem; margin-bottom:10px; display:flex; align-items:baseline; gap:8px; }
+  .trend-count{ font-weight:600; color:var(--muted); font-size:.78rem; }
+</style>
+</head>
+<body>
+
+<!-- ================= SIGN-IN GATE ================= -->
+<div id="signInView">
+  <div class="signin-card">
+    <div class="signin-emoji">🔐</div>
+    <h1 class="signin-title">GMAP Pulse — Admin</h1>
+    <p class="signin-sub">Sign in with your Google account to view survey insights. Access is limited to approved HRBPs.</p>
+    <div id="gsiButtonSlot"></div>
+    <div class="signin-error" id="signinError"></div>
+  </div>
+</div>
+
+<!-- ================= ADMIN DASHBOARD ================= -->
+<div id="adminView" class="hidden">
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h1 class="admin-title">GMAP Pulse — Insights</h1>
+        <p class="subtitle">Live results from your team's check-in survey.</p>
+        <p class="user-chip" id="userChip"></p>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="refresh-btn" id="exportBtn" onclick="exportExcel()">
+          <span>⬇️</span> Export Excel
+        </button>
+        <button class="refresh-btn" id="refreshBtn" onclick="loadAdminData()">
+          <span class="spin-icon">🔄</span> Refresh
+        </button>
+      </div>
+    </div>
+    <div id="errorBanner"></div>
+    <div id="adminContent">
+      <div class="loading">Loading responses...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ==================== CONFIG — fill these in ==================== */
+  const CLIENT_ID = '952154209179-523hnptk5mi5mapn1uhjib51boo13gau.apps.googleusercontent.com';
+  const SPREADSHEET_ID = '12lh9oSmzGBG4BfZr5ZnZrLdUU_vzfmcGU3-LMDzGq60';
+  const SHEET_RANGE = "'Form Responses 1'!A:H";
+  const SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+
+  /* ==================== AUTH ==================== */
+  let accessToken = null;
+  let tokenClient = null;
+  let currentUserEmail = '';
+
+  function initGoogleSignIn(){
+    if(typeof google === 'undefined' || !google.accounts){
+      document.getElementById('signinError').textContent = 'Google Sign-In failed to load. Check your connection and refresh.';
+      return;
+    }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPE,
+      callback: handleTokenResponse
+    });
+
+    // Render a plain "Sign in with Google"-style button that triggers the token flow.
+    const slot = document.getElementById('gsiButtonSlot');
+    const btn = document.createElement('button');
+    btn.className = 'refresh-btn';
+    btn.style.padding = '12px 22px';
+    btn.style.fontSize = '.95rem';
+    btn.innerHTML = '<span>🔑</span> Sign in with Google';
+    btn.onclick = () => {
+      document.getElementById('signinError').textContent = '';
+      tokenClient.requestAccessToken();
+    };
+    slot.appendChild(btn);
+  }
+
+  function handleTokenResponse(resp){
+    if(resp.error){
+      document.getElementById('signinError').textContent =
+        "Sign-in didn't complete (" + resp.error + "). If this is your first time, make sure you were added as a test user.";
+      return;
+    }
+    accessToken = resp.access_token;
+    document.getElementById('signInView').classList.add('hidden');
+    document.getElementById('adminView').classList.remove('hidden');
+    loadAdminData();
+  }
+
+  function signOut(){
+    accessToken = null;
+    document.getElementById('adminView').classList.add('hidden');
+    document.getElementById('signInView').classList.remove('hidden');
+    document.getElementById('signinError').textContent = '';
+  }
+
+  window.onload = initGoogleSignIn;
+
+  /* ==================== DATA LOADING (Sheets API, replaces Apps Script) ==================== */
+  const rotationLabels = { 1:'1: Struggling', 2:'2: Surviving', 3:'3: Maintaining', 4:'4: Progressing', 5:'5: Thriving' };
+  const workloadLabels = { 1:'1: Overwhelmed', 2:'2: Heavy', 3:'3: Manageable', 4:'4: Comfortable', 5:'5: Very light' };
+  const managerOrder = ['Multiple times a week','Weekly','Every 2 weeks','Monthly','Less than once a month'];
+  const rotationEmojiMap = {1:'😖',2:'😕',3:'😐',4:'🙂',5:'😄'};
+  const workloadEmojiMap = {1:'🥵',2:'😣',3:'😌',4:'🙂',5:'😎'};
+  const TARGET = 30;
+  let lastResponses = [];
+
+  // Reads the leading integer off strings like "4: Progressing" — robust even if descriptor text changes later.
+  function scoreFromLabel(v){
+    if(v === undefined || v === null) return NaN;
+    const n = parseInt(String(v).trim(), 10);
+    return isNaN(n) ? NaN : n;
+  }
+
+  function rowsToResponses(values){
+    if(!values || values.length < 2) return [];
+    const headers = values[0].map(h => h.trim());
+    const idx = (name) => headers.indexOf(name);
+
+    const iTs = idx('Timestamp');
+    const iEmail = idx('Email');
+    const iRotation = idx('Overall, how are you feeling about your current rotation?');
+    const iWorkload = idx('How manageable is your current workload?');
+    const iManager = idx('How often do you meet with your Reporting Manager (1:1 or otherwise)?');
+    const iHighlight = idx("Is there anything you\u2019d like to highlight to us right now?");
+    const iId = idx('id (internal \u2014 do not use)');
+    const iWeek = idx('week (internal)');
+
+    return values.slice(1)
+      .filter(r => r.length > 0 && (iEmail === -1 || r[iEmail]))
+      .map(r => ({
+        id: iId > -1 ? r[iId] || '' : '',
+        ts: iTs > -1 ? r[iTs] || '' : '',
+        week: iWeek > -1 ? r[iWeek] || '' : '',
+        email: iEmail > -1 ? r[iEmail] || '' : '',
+        rotation: scoreFromLabel(iRotation > -1 ? r[iRotation] : ''),
+        workload: scoreFromLabel(iWorkload > -1 ? r[iWorkload] : ''),
+        managerFreq: iManager > -1 ? r[iManager] || '' : '',
+        highlight: iHighlight > -1 ? r[iHighlight] || '' : ''
+      }));
+  }
+
+  async function loadAdminData(){
+    const btn = document.getElementById('refreshBtn');
+    const errorBanner = document.getElementById('errorBanner');
+    errorBanner.innerHTML = '';
+    if(btn){ btn.classList.add('spinning'); btn.disabled = true; }
+
+    try{
+      if(!accessToken) throw new Error('Not signed in');
+      if(CLIENT_ID.indexOf('PASTE_YOUR') === 0 || SPREADSHEET_ID.indexOf('PASTE_YOUR') === 0){
+        throw new Error('CLIENT_ID / SPREADSHEET_ID not configured yet in the page code');
+      }
+
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_RANGE)}`;
+      const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+
+      if(res.status === 401){
+        // Token expired (test-user tokens expire after 7 days) — send them back to sign in again.
+        signOut();
+        throw new Error('Your session expired — please sign in again.');
+      }
+      if(res.status === 403){
+        throw new Error("You're signed in, but don't have access to this Sheet yet. Ask the survey owner to share it with your email.");
+      }
+      if(!res.ok) throw new Error('Sheets API returned ' + res.status);
+
+      const json = await res.json();
+      const responses = rowsToResponses(json.values || []);
+      lastResponses = responses;
+      renderAdmin(responses);
+
+      // Show who's signed in, with a sign-out option, once we successfully have data.
+      if(currentUserEmail){
+        document.getElementById('userChip').innerHTML =
+          'Signed in as ' + currentUserEmail + '<button onclick="signOut()">Sign out</button>';
+      }
+    }catch(err){
+      console.error('Load error:', err);
+      lastResponses = [];
+      errorBanner.innerHTML = `<div class="error-banner">${err.message || "Couldn't load responses right now."}</div>`;
+      document.getElementById('adminContent').innerHTML = '';
+    }finally{
+      if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
+    }
+  }
+
+  /* ==================== RENDERING (unchanged logic from prior build) ==================== */
+  function avg(nums){ if(!nums.length) return 0; return nums.reduce((a,b)=>a+b,0) / nums.length; }
+  function pulseEmojiFor(score){
+    if(score >= 4.3) return '🤩'; if(score >= 3.5) return '🙂';
+    if(score >= 2.5) return '😐'; if(score >= 1.5) return '😕'; return '😖';
+  }
+  function renderDistBar(containerEl, count, total, labelText, emoji){
+    const pct = total > 0 ? Math.round((count/total)*100) : 0;
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      ${emoji ? `<span class="bar-emoji">${emoji}</span>` : ''}
+      <span class="bar-label">${labelText}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span>
+      <span class="bar-count">${count} · ${pct}%</span>
+    `;
+    containerEl.appendChild(row);
+  }
+  function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+  function renderAdmin(responses){
+    const content = document.getElementById('adminContent');
+    const total = responses.length;
+
+    if(total === 0){
+      content.innerHTML = `<div class="admin-card"><div class="empty-state">No responses yet. Once your team starts filling out the survey, insights will show up here.</div></div>`;
+      return;
+    }
+
+    const rotationVals = responses.map(r => r.rotation).filter(v => typeof v === 'number' && !isNaN(v));
+    const workloadVals = responses.map(r => r.workload).filter(v => typeof v === 'number' && !isNaN(v));
+    const rotationAvg = avg(rotationVals);
+    const workloadAvg = avg(workloadVals);
+    const overallAvg = avg([rotationAvg, workloadAvg]);
+
+    const managerCounts = {};
+    managerOrder.forEach(o => managerCounts[o] = 0);
+    responses.forEach(r => { if(r.managerFreq && managerCounts.hasOwnProperty(r.managerFreq)) managerCounts[r.managerFreq]++; });
+
+    const highlights = responses
+      .filter(r => r.highlight && r.highlight.trim().length > 0)
+      .sort((a,b) => new Date(b.ts) - new Date(a.ts));
+
+    const targetPct = Math.min(100, Math.round((total/TARGET)*100));
+
+    content.innerHTML = `
+      <div class="pulse-hero">
+        <div class="pulse-left">
+          <div class="pulse-emoji">${pulseEmojiFor(overallAvg)}</div>
+          <div>
+            <div class="pulse-number">${overallAvg.toFixed(1)} / 5</div>
+            <div class="pulse-label">Overall team pulse (rotation + workload)</div>
+          </div>
+        </div>
+        <div class="pulse-right">
+          <div class="response-count">${total}</div>
+          <div class="response-target">of ${TARGET} expected responses</div>
+          <div class="target-track"><div class="target-fill" style="width:${targetPct}%"></div></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="admin-card">
+          <div class="card-title">Rotation feeling</div>
+          <div class="card-sub">Struggling (1) → Thriving (5)</div>
+          <div class="avg-row"><span class="avg-number">${rotationAvg.toFixed(1)}</span><span class="avg-out-of">average out of 5</span></div>
+          <div id="rotationDist"></div>
+        </div>
+        <div class="admin-card">
+          <div class="card-title">Workload manageability</div>
+          <div class="card-sub">Overwhelmed (1) → Very light (5)</div>
+          <div class="avg-row"><span class="avg-number">${workloadAvg.toFixed(1)}</span><span class="avg-out-of">average out of 5</span></div>
+          <div id="workloadDist"></div>
+        </div>
+      </div>
+      <div class="admin-card">
+        <div class="card-title">Manager check-in frequency</div>
+        <div class="card-sub">How often people are meeting with their Reporting Manager</div>
+        <div id="managerDist"></div>
+      </div>
+      <div class="admin-card">
+        <div class="card-title">Trend over time</div>
+        <div class="card-sub">Weekly averages for rotation feeling and workload</div>
+        <div id="trendWeeks"></div>
+      </div>
+      <div class="admin-card">
+        <div class="card-title">Highlights from the team</div>
+        <div class="card-sub">${highlights.length} of ${total} people left a note, most recent first</div>
+        <div class="highlights-list" id="highlightsList"></div>
+      </div>
+    `;
+
+    const rotDist = document.getElementById('rotationDist');
+    for(let v=5; v>=1; v--){ renderDistBar(rotDist, rotationVals.filter(x=>x===v).length, rotationVals.length, `${v}`, rotationEmojiMap[v]); }
+
+    const workDist = document.getElementById('workloadDist');
+    for(let v=5; v>=1; v--){ renderDistBar(workDist, workloadVals.filter(x=>x===v).length, workloadVals.length, `${v}`, workloadEmojiMap[v]); }
+
+    const mgrDist = document.getElementById('managerDist');
+    managerOrder.forEach(opt => renderDistBar(mgrDist, managerCounts[opt], total, opt, null));
+
+    renderTrend(responses);
+
+    const highlightsList = document.getElementById('highlightsList');
+    if(highlights.length === 0){
+      highlightsList.innerHTML = `<div class="empty-state">No notes left yet.</div>`;
+    }else{
+      highlights.forEach(r => {
+        const div = document.createElement('div');
+        div.className = 'highlight-card';
+        const date = new Date(r.ts);
+        const dateStr = isNaN(date) ? '' : date.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+        div.innerHTML = `"${escapeHtml(r.highlight)}"<span class="highlight-meta">${dateStr}${r.email ? ' · ' + escapeHtml(r.email) : ''}</span>`;
+        highlightsList.appendChild(div);
+      });
+    }
+  }
+
+  function renderTrend(responses){
+    const container = document.getElementById('trendWeeks');
+    const byWeek = {};
+    responses.forEach(r => {
+      const wk = r.week || 'Unlabeled';
+      if(!byWeek[wk]) byWeek[wk] = { rotation:[], workload:[], tsList:[] };
+      if(typeof r.rotation === 'number' && !isNaN(r.rotation)) byWeek[wk].rotation.push(r.rotation);
+      if(typeof r.workload === 'number' && !isNaN(r.workload)) byWeek[wk].workload.push(r.workload);
+      if(r.ts) byWeek[wk].tsList.push(new Date(r.ts));
+    });
+
+    const weekKeys = Object.keys(byWeek).sort();
+    if(weekKeys.length === 0){
+      container.innerHTML = `<div class="empty-state">No data yet.</div>`;
+      return;
+    }
+
+    container.innerHTML = '';
+    weekKeys.forEach(wk => {
+      const bucket = byWeek[wk];
+      const rotAvg = avg(bucket.rotation);
+      const workAvg = avg(bucket.workload);
+      const earliest = bucket.tsList.length ? new Date(Math.min(...bucket.tsList.map(d => d.getTime()))) : null;
+      const dateLabel = earliest && !isNaN(earliest)
+        ? `Week of ${earliest.toLocaleDateString(undefined, { month:'short', day:'numeric' })}`
+        : wk;
+
+      const row = document.createElement('div');
+      row.className = 'trend-week';
+      row.innerHTML = `
+        <div class="trend-week-label">${dateLabel} <span class="trend-count">(${bucket.tsList.length} response${bucket.tsList.length === 1 ? '' : 's'})</span></div>
+        <div class="bar-row">
+          <span class="bar-emoji">${rotationEmojiMap[Math.round(rotAvg)] || '·'}</span>
+          <span class="bar-label">Rotation</span>
+          <span class="bar-track"><span class="bar-fill" style="width:${(rotAvg/5*100).toFixed(0)}%"></span></span>
+          <span class="bar-count">${rotAvg ? rotAvg.toFixed(1) : '–'}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-emoji">${workloadEmojiMap[Math.round(workAvg)] || '·'}</span>
+          <span class="bar-label">Workload</span>
+          <span class="bar-track"><span class="bar-fill" style="width:${(workAvg/5*100).toFixed(0)}%"></span></span>
+          <span class="bar-count">${workAvg ? workAvg.toFixed(1) : '–'}</span>
+        </div>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  function exportExcel(){
+    if(!lastResponses || lastResponses.length === 0){
+      alert('No responses loaded yet — hit Refresh first, then try exporting.');
+      return;
+    }
+    if(typeof XLSX === 'undefined'){
+      alert('Excel export library failed to load — check your connection and try again.');
+      return;
+    }
+
+    const rows = lastResponses
+      .slice()
+      .sort((a,b) => new Date(a.ts) - new Date(b.ts))
+      .map(r => ({
+        ID: r.id || '',
+        Timestamp: r.ts || '',
+        Week: r.week || '',
+        Email: r.email || '',
+        'Rotation (1-5)': typeof r.rotation === 'number' && !isNaN(r.rotation) ? r.rotation : '',
+        'Workload (1-5)': typeof r.workload === 'number' && !isNaN(r.workload) ? r.workload : '',
+        'Manager Check-in Frequency': r.managerFreq || '',
+        Highlight: r.highlight || ''
+      }));
+
+    const rotationVals = lastResponses.map(r => r.rotation).filter(v => typeof v === 'number' && !isNaN(v));
+    const workloadVals = lastResponses.map(r => r.workload).filter(v => typeof v === 'number' && !isNaN(v));
+    const managerCounts = {};
+    managerOrder.forEach(o => managerCounts[o] = 0);
+    lastResponses.forEach(r => { if(r.managerFreq && managerCounts.hasOwnProperty(r.managerFreq)) managerCounts[r.managerFreq]++; });
+
+    const summaryRows = [
+      { Metric: 'Total responses', Value: lastResponses.length },
+      { Metric: 'Rotation feeling — average (1-5)', Value: rotationVals.length ? Number(avg(rotationVals).toFixed(2)) : '' },
+      { Metric: 'Workload manageability — average (1-5)', Value: workloadVals.length ? Number(avg(workloadVals).toFixed(2)) : '' },
+      { Metric: '', Value: '' },
+      { Metric: 'Manager check-in frequency', Value: '' },
+      ...managerOrder.map(o => ({ Metric: o, Value: managerCounts[o] }))
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+    const wsResponses = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+    XLSX.utils.book_append_sheet(wb, wsResponses, 'Responses');
+
+    const dateStr = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `gmap-pulse-responses-${dateStr}.xlsx`);
+  }
+</script>
+</body>
+</html>
