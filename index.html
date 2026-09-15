@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Karla:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
   :root{
     --bg:#FBF8F2; --surface:#FFFFFF; --ink:#26332C; --muted:#6B7A72;
@@ -17,20 +17,6 @@
   *{ box-sizing:border-box; }
   html,body{ margin:0; padding:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:'Karla',sans-serif; }
   .hidden{ display:none !important; }
-
-  /* ---------- sign-in gate ---------- */
-  #signInView{
-    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
-  }
-  .signin-card{
-    background:var(--surface); border-radius:24px; padding:40px 32px; max-width:380px; width:100%;
-    text-align:center; border:1px solid var(--line); box-shadow:0 18px 40px -14px rgba(38,51,44,.16);
-  }
-  .signin-emoji{ font-size:2.4rem; margin-bottom:10px; }
-  .signin-title{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:1.4rem; margin:0 0 8px; }
-  .signin-sub{ color:var(--muted); font-size:.92rem; margin:0 0 24px; line-height:1.5; }
-  #gsiButtonSlot{ display:flex; justify-content:center; }
-  .signin-error{ color:var(--danger); font-size:.85rem; margin-top:16px; line-height:1.5; }
 
   /* ---------- admin dashboard (unchanged from prior build) ---------- */
   #adminView{ padding:28px 20px 60px; }
@@ -97,25 +83,14 @@
 </head>
 <body>
 
-<!-- ================= SIGN-IN GATE ================= -->
-<div id="signInView">
-  <div class="signin-card">
-    <div class="signin-emoji">🔐</div>
-    <h1 class="signin-title">GMAP Pulse — Admin</h1>
-    <p class="signin-sub">Sign in with your Google account to view survey insights. Access is limited to approved HRBPs.</p>
-    <div id="gsiButtonSlot"></div>
-    <div class="signin-error" id="signinError"></div>
-  </div>
-</div>
-
-<!-- ================= ADMIN DASHBOARD ================= -->
-<div id="adminView" class="hidden">
+<!-- ================= ADMIN DASHBOARD (no gate — open by design, per request) ================= -->
+<div id="adminView">
   <div class="wrap">
     <div class="header">
       <div>
         <h1 class="admin-title">GMAP Pulse — Insights</h1>
         <p class="subtitle">Live results from your team's check-in survey.</p>
-        <p class="user-chip" id="userChip"></p>
+        <p class="subtitle" style="font-size:.8rem; opacity:.75;">📸 Snapshot data — refreshed periodically, not real-time.</p>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="refresh-btn" id="exportBtn" onclick="exportExcel()">
@@ -134,69 +109,23 @@
 </div>
 
 <script>
-  /* ==================== CONFIG — fill these in ==================== */
-  const CLIENT_ID = '952154209179-523hnptk5mi5mapn1uhjib51boo13gau.apps.googleusercontent.com';
-  const SPREADSHEET_ID = '12lh9oSmzGBG4BfZr5ZnZrLdUU_vzfmcGU3-LMDzGq60';
-  const SHEET_RANGE = "'Form Responses 1'!A:H";
-  const SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+  /* ==================== CONFIG — fill in ==================== */
+  // Prototype (Option A): reads a plain CSV file sitting in this same repo.
+  // Update it weekly: Sheet > File > Download > CSV, then upload as data.csv
+  // to the repo (same place as index.html). No Google auth involved at all,
+  // so this works for any viewer regardless of domain.
+  // Future: this can be automated (a scheduled job re-exports data.csv
+  // automatically) without changing anything else in this file.
+  const CSV_URL = './data.csv';
 
-  /* ==================== AUTH ==================== */
-  let accessToken = null;
-  let tokenClient = null;
-  let currentUserEmail = '';
-
-  function initGoogleSignIn(){
-    if(typeof google === 'undefined' || !google.accounts){
-      document.getElementById('signinError').textContent = 'Google Sign-In failed to load. Check your connection and refresh.';
-      return;
-    }
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPE,
-      callback: handleTokenResponse
-    });
-
-    // Render a plain "Sign in with Google"-style button that triggers the token flow.
-    const slot = document.getElementById('gsiButtonSlot');
-    const btn = document.createElement('button');
-    btn.className = 'refresh-btn';
-    btn.style.padding = '12px 22px';
-    btn.style.fontSize = '.95rem';
-    btn.innerHTML = '<span>🔑</span> Sign in with Google';
-    btn.onclick = () => {
-      document.getElementById('signinError').textContent = '';
-      tokenClient.requestAccessToken();
-    };
-    slot.appendChild(btn);
-  }
-
-  function handleTokenResponse(resp){
-    if(resp.error){
-      document.getElementById('signinError').textContent =
-        "Sign-in didn't complete (" + resp.error + "). If this is your first time, make sure you were added as a test user.";
-      return;
-    }
-    accessToken = resp.access_token;
-    document.getElementById('signInView').classList.add('hidden');
-    document.getElementById('adminView').classList.remove('hidden');
-    loadAdminData();
-  }
-
-  function signOut(){
-    accessToken = null;
-    document.getElementById('adminView').classList.add('hidden');
-    document.getElementById('signInView').classList.remove('hidden');
-    document.getElementById('signinError').textContent = '';
-  }
-
-  window.onload = initGoogleSignIn;
-
-  /* ==================== DATA LOADING (Sheets API, replaces Apps Script) ==================== */
+  /* ==================== DATA LOADING (published CSV — no auth, no gate) ==================== */
   const rotationLabels = { 1:'1: Struggling', 2:'2: Surviving', 3:'3: Maintaining', 4:'4: Progressing', 5:'5: Thriving' };
   const workloadLabels = { 1:'1: Overwhelmed', 2:'2: Heavy', 3:'3: Manageable', 4:'4: Comfortable', 5:'5: Very light' };
-  const managerOrder = ['Multiple times a week','Weekly','Every 2 weeks','Monthly','Less than once a month'];
+  const supportedLabels = { 1:'1: Unsupported', 2:'2: Somewhat unsupported', 3:'3: Neutral', 4:'4: Mostly supported', 5:'5: Fully supported' };
+  const supportedOrder = [1,2,3,4,5];
   const rotationEmojiMap = {1:'😖',2:'😕',3:'😐',4:'🙂',5:'😄'};
   const workloadEmojiMap = {1:'🥵',2:'😣',3:'😌',4:'🙂',5:'😎'};
+  const supportedEmojiMap = {1:'😞',2:'😕',3:'😐',4:'🙂',5:'🤝'};
   const TARGET = 30;
   let lastResponses = [];
 
@@ -207,21 +136,21 @@
     return isNaN(n) ? NaN : n;
   }
 
-  function rowsToResponses(values){
-    if(!values || values.length < 2) return [];
-    const headers = values[0].map(h => h.trim());
+  function rowsToResponses(rows){
+    if(!rows || rows.length < 2) return [];
+    const headers = rows[0].map(h => (h || '').trim());
     const idx = (name) => headers.indexOf(name);
 
     const iTs = idx('Timestamp');
     const iEmail = idx('Email');
-    const iRotation = idx('Overall, how are you feeling about your current rotation?');
-    const iWorkload = idx('How manageable is your current workload?');
-    const iManager = idx('How often do you meet with your Reporting Manager (1:1 or otherwise)?');
-    const iHighlight = idx("Is there anything you\u2019d like to highlight to us right now?");
+    const iRotation = idx('How are you feeling about your rotation this week?');
+    const iWorkload = idx('How manageable has your workload felt this week?');
+    const iSupported = idx('How supported have you felt by your Reporting Manager/team this week?');
+    const iHighlight = idx("Anything you\u2019d like to highlight from this week?");
     const iId = idx('id (internal \u2014 do not use)');
     const iWeek = idx('week (internal)');
 
-    return values.slice(1)
+    return rows.slice(1)
       .filter(r => r.length > 0 && (iEmail === -1 || r[iEmail]))
       .map(r => ({
         id: iId > -1 ? r[iId] || '' : '',
@@ -230,55 +159,48 @@
         email: iEmail > -1 ? r[iEmail] || '' : '',
         rotation: scoreFromLabel(iRotation > -1 ? r[iRotation] : ''),
         workload: scoreFromLabel(iWorkload > -1 ? r[iWorkload] : ''),
-        managerFreq: iManager > -1 ? r[iManager] || '' : '',
+        supported: scoreFromLabel(iSupported > -1 ? r[iSupported] : ''),
         highlight: iHighlight > -1 ? r[iHighlight] || '' : ''
       }));
   }
 
-  async function loadAdminData(){
+  function loadAdminData(){
     const btn = document.getElementById('refreshBtn');
     const errorBanner = document.getElementById('errorBanner');
     errorBanner.innerHTML = '';
     if(btn){ btn.classList.add('spinning'); btn.disabled = true; }
 
-    try{
-      if(!accessToken) throw new Error('Not signed in');
-      if(CLIENT_ID.indexOf('PASTE_YOUR') === 0 || SPREADSHEET_ID.indexOf('PASTE_YOUR') === 0){
-        throw new Error('CLIENT_ID / SPREADSHEET_ID not configured yet in the page code');
-      }
-
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_RANGE)}`;
-      const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
-
-      if(res.status === 401){
-        // Token expired (test-user tokens expire after 7 days) — send them back to sign in again.
-        signOut();
-        throw new Error('Your session expired — please sign in again.');
-      }
-      if(res.status === 403){
-        throw new Error("You're signed in, but don't have access to this Sheet yet. Ask the survey owner to share it with your email.");
-      }
-      if(!res.ok) throw new Error('Sheets API returned ' + res.status);
-
-      const json = await res.json();
-      const responses = rowsToResponses(json.values || []);
-      lastResponses = responses;
-      renderAdmin(responses);
-
-      // Show who's signed in, with a sign-out option, once we successfully have data.
-      if(currentUserEmail){
-        document.getElementById('userChip').innerHTML =
-          'Signed in as ' + currentUserEmail + '<button onclick="signOut()">Sign out</button>';
-      }
-    }catch(err){
-      console.error('Load error:', err);
-      lastResponses = [];
-      errorBanner.innerHTML = `<div class="error-banner">${err.message || "Couldn't load responses right now."}</div>`;
-      document.getElementById('adminContent').innerHTML = '';
-    }finally{
+    if(CSV_URL.indexOf('PASTE_YOUR') === 0){
+      errorBanner.innerHTML = `<div class="error-banner">CSV_URL not configured yet in the page code.</div>`;
       if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
+      return;
     }
+
+    Papa.parse(CSV_URL, {
+      download: true,
+      complete: (result) => {
+        try{
+          const responses = rowsToResponses(result.data || []);
+          lastResponses = responses;
+          renderAdmin(responses);
+        }catch(err){
+          console.error('Parse error:', err);
+          errorBanner.innerHTML = `<div class="error-banner">Couldn't process the data — check the CSV_URL and sheet headers.</div>`;
+        }finally{
+          if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
+        }
+      },
+      error: (err) => {
+        console.error('Load error:', err);
+        lastResponses = [];
+        errorBanner.innerHTML = `<div class="error-banner">Couldn't load responses right now — check that CSV_URL is correct and published.</div>`;
+        document.getElementById('adminContent').innerHTML = '';
+        if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
+      }
+    });
   }
+
+  window.onload = loadAdminData;
 
   /* ==================== RENDERING (unchanged logic from prior build) ==================== */
   function avg(nums){ if(!nums.length) return 0; return nums.reduce((a,b)=>a+b,0) / nums.length; }
@@ -311,13 +233,11 @@
 
     const rotationVals = responses.map(r => r.rotation).filter(v => typeof v === 'number' && !isNaN(v));
     const workloadVals = responses.map(r => r.workload).filter(v => typeof v === 'number' && !isNaN(v));
+    const supportedVals = responses.map(r => r.supported).filter(v => typeof v === 'number' && !isNaN(v));
     const rotationAvg = avg(rotationVals);
     const workloadAvg = avg(workloadVals);
-    const overallAvg = avg([rotationAvg, workloadAvg]);
-
-    const managerCounts = {};
-    managerOrder.forEach(o => managerCounts[o] = 0);
-    responses.forEach(r => { if(r.managerFreq && managerCounts.hasOwnProperty(r.managerFreq)) managerCounts[r.managerFreq]++; });
+    const supportedAvg = avg(supportedVals);
+    const overallAvg = avg([rotationAvg, workloadAvg, supportedAvg]);
 
     const highlights = responses
       .filter(r => r.highlight && r.highlight.trim().length > 0)
@@ -331,7 +251,7 @@
           <div class="pulse-emoji">${pulseEmojiFor(overallAvg)}</div>
           <div>
             <div class="pulse-number">${overallAvg.toFixed(1)} / 5</div>
-            <div class="pulse-label">Overall team pulse (rotation + workload)</div>
+            <div class="pulse-label">Overall team pulse (rotation + workload + supported)</div>
           </div>
         </div>
         <div class="pulse-right">
@@ -355,9 +275,10 @@
         </div>
       </div>
       <div class="admin-card">
-        <div class="card-title">Manager check-in frequency</div>
-        <div class="card-sub">How often people are meeting with their Reporting Manager</div>
-        <div id="managerDist"></div>
+        <div class="card-title">Supported by RM/team</div>
+        <div class="card-sub">Unsupported (1) → Fully supported (5)</div>
+        <div class="avg-row"><span class="avg-number">${supportedAvg.toFixed(1)}</span><span class="avg-out-of">average out of 5</span></div>
+        <div id="supportedDist"></div>
       </div>
       <div class="admin-card">
         <div class="card-title">Trend over time</div>
@@ -377,8 +298,8 @@
     const workDist = document.getElementById('workloadDist');
     for(let v=5; v>=1; v--){ renderDistBar(workDist, workloadVals.filter(x=>x===v).length, workloadVals.length, `${v}`, workloadEmojiMap[v]); }
 
-    const mgrDist = document.getElementById('managerDist');
-    managerOrder.forEach(opt => renderDistBar(mgrDist, managerCounts[opt], total, opt, null));
+    const supDist = document.getElementById('supportedDist');
+    for(let v=5; v>=1; v--){ renderDistBar(supDist, supportedVals.filter(x=>x===v).length, supportedVals.length, `${v}`, supportedEmojiMap[v]); }
 
     renderTrend(responses);
 
@@ -402,9 +323,10 @@
     const byWeek = {};
     responses.forEach(r => {
       const wk = r.week || 'Unlabeled';
-      if(!byWeek[wk]) byWeek[wk] = { rotation:[], workload:[], tsList:[] };
+      if(!byWeek[wk]) byWeek[wk] = { rotation:[], workload:[], supported:[], tsList:[] };
       if(typeof r.rotation === 'number' && !isNaN(r.rotation)) byWeek[wk].rotation.push(r.rotation);
       if(typeof r.workload === 'number' && !isNaN(r.workload)) byWeek[wk].workload.push(r.workload);
+      if(typeof r.supported === 'number' && !isNaN(r.supported)) byWeek[wk].supported.push(r.supported);
       if(r.ts) byWeek[wk].tsList.push(new Date(r.ts));
     });
 
@@ -419,6 +341,7 @@
       const bucket = byWeek[wk];
       const rotAvg = avg(bucket.rotation);
       const workAvg = avg(bucket.workload);
+      const supAvg = avg(bucket.supported);
       const earliest = bucket.tsList.length ? new Date(Math.min(...bucket.tsList.map(d => d.getTime()))) : null;
       const dateLabel = earliest && !isNaN(earliest)
         ? `Week of ${earliest.toLocaleDateString(undefined, { month:'short', day:'numeric' })}`
@@ -439,6 +362,12 @@
           <span class="bar-label">Workload</span>
           <span class="bar-track"><span class="bar-fill" style="width:${(workAvg/5*100).toFixed(0)}%"></span></span>
           <span class="bar-count">${workAvg ? workAvg.toFixed(1) : '–'}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-emoji">${supportedEmojiMap[Math.round(supAvg)] || '·'}</span>
+          <span class="bar-label">Supported</span>
+          <span class="bar-track"><span class="bar-fill" style="width:${(supAvg/5*100).toFixed(0)}%"></span></span>
+          <span class="bar-count">${supAvg ? supAvg.toFixed(1) : '–'}</span>
         </div>
       `;
       container.appendChild(row);
@@ -465,23 +394,19 @@
         Email: r.email || '',
         'Rotation (1-5)': typeof r.rotation === 'number' && !isNaN(r.rotation) ? r.rotation : '',
         'Workload (1-5)': typeof r.workload === 'number' && !isNaN(r.workload) ? r.workload : '',
-        'Manager Check-in Frequency': r.managerFreq || '',
+        'Supported (1-5)': typeof r.supported === 'number' && !isNaN(r.supported) ? r.supported : '',
         Highlight: r.highlight || ''
       }));
 
     const rotationVals = lastResponses.map(r => r.rotation).filter(v => typeof v === 'number' && !isNaN(v));
     const workloadVals = lastResponses.map(r => r.workload).filter(v => typeof v === 'number' && !isNaN(v));
-    const managerCounts = {};
-    managerOrder.forEach(o => managerCounts[o] = 0);
-    lastResponses.forEach(r => { if(r.managerFreq && managerCounts.hasOwnProperty(r.managerFreq)) managerCounts[r.managerFreq]++; });
+    const supportedVals = lastResponses.map(r => r.supported).filter(v => typeof v === 'number' && !isNaN(v));
 
     const summaryRows = [
       { Metric: 'Total responses', Value: lastResponses.length },
       { Metric: 'Rotation feeling — average (1-5)', Value: rotationVals.length ? Number(avg(rotationVals).toFixed(2)) : '' },
       { Metric: 'Workload manageability — average (1-5)', Value: workloadVals.length ? Number(avg(workloadVals).toFixed(2)) : '' },
-      { Metric: '', Value: '' },
-      { Metric: 'Manager check-in frequency', Value: '' },
-      ...managerOrder.map(o => ({ Metric: o, Value: managerCounts[o] }))
+      { Metric: 'Supported by RM/team — average (1-5)', Value: supportedVals.length ? Number(avg(supportedVals).toFixed(2)) : '' }
     ];
 
     const wb = XLSX.utils.book_new();
