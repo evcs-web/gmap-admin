@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Karla:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   :root{
     --bg:#FBF8F2; --surface:#FFFFFF; --ink:#26332C; --muted:#6B7A72;
@@ -18,14 +19,11 @@
   html,body{ margin:0; padding:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:'Karla',sans-serif; }
   .hidden{ display:none !important; }
 
-  /* ---------- admin dashboard (unchanged from prior build) ---------- */
   #adminView{ padding:28px 20px 60px; }
-  .wrap{ max-width:920px; margin:0 auto; }
-  .header{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:28px; flex-wrap:wrap; }
+  .wrap{ max-width:960px; margin:0 auto; }
+  .header{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
   .admin-title{ font-family:'Fredoka', sans-serif; font-weight:600; font-size:1.9rem; margin:0 0 6px; color:var(--ink); }
   .subtitle{ color:var(--muted); font-size:.95rem; margin:0; }
-  .user-chip{ color:var(--muted); font-size:.82rem; margin-top:4px; }
-  .user-chip button{ background:none; border:none; color:var(--accent); font-weight:700; cursor:pointer; font-size:.82rem; padding:0; margin-left:8px; }
   .refresh-btn{
     background:var(--surface); border:1.5px solid var(--line); color:var(--ink); font-family:'Karla',sans-serif;
     font-weight:700; font-size:.88rem; padding:10px 16px; border-radius:12px; cursor:pointer;
@@ -35,6 +33,14 @@
   .refresh-btn:active{ transform:scale(.97); }
   .refresh-btn.spinning .spin-icon{ animation:spin .7s linear infinite; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .filter-bar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .filter-bar select{
+    font-family:'Karla',sans-serif; font-size:.88rem; padding:9px 14px; border-radius:12px;
+    border:1.5px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer;
+  }
+  .filter-bar select:focus{ outline:none; border-color:var(--accent); }
+  .unmatched-note{ font-size:.78rem; color:var(--muted); margin:0 0 18px; }
 
   .pulse-hero{
     background:var(--accent); color:#fff; border-radius:24px; padding:28px 30px; margin-bottom:22px;
@@ -50,16 +56,22 @@
   .target-track{ width:180px; height:6px; border-radius:999px; background:rgba(255,255,255,.3); margin-top:8px; overflow:hidden; }
   .target-fill{ height:100%; background:#fff; border-radius:999px; transition:width .5s ease; }
 
-  .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }
-  @media (max-width:720px){ .grid-2{ grid-template-columns:1fr; } }
+  .grid-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:18px; }
+  @media (max-width:760px){ .grid-3{ grid-template-columns:1fr; } }
 
-  .admin-card{ background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:24px; margin-bottom:18px; }
+  .admin-card{ background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:22px; margin-bottom:18px; }
+  .metric-card{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px; }
   .card-title{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:1.1rem; margin:0 0 4px; }
-  .card-sub{ color:var(--muted); font-size:.85rem; margin:0 0 18px; }
+  .card-sub{ color:var(--muted); font-size:.85rem; margin:0 0 14px; }
 
-  .avg-row{ display:flex; align-items:baseline; gap:10px; margin-bottom:18px; }
-  .avg-number{ font-family:'Fredoka',sans-serif; font-size:2.2rem; font-weight:600; color:var(--accent); }
-  .avg-out-of{ color:var(--muted); font-size:.85rem; }
+  .avg-row{ display:flex; align-items:baseline; gap:8px; margin-bottom:2px; }
+  .avg-number{ font-family:'Fredoka',sans-serif; font-size:1.9rem; font-weight:600; color:var(--accent); }
+  .avg-out-of{ color:var(--muted); font-size:.8rem; }
+  .delta-row{ display:flex; align-items:center; gap:5px; font-size:.8rem; font-weight:700; margin-bottom:10px; }
+  .delta-up{ color:var(--accent); }
+  .delta-down{ color:var(--danger); }
+  .delta-flat{ color:var(--muted); }
+  .sparkline-wrap{ position:relative; width:100%; height:44px; }
 
   .bar-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
   .bar-emoji{ width:26px; text-align:center; font-size:1.1rem; flex-shrink:0; }
@@ -75,22 +87,25 @@
   .loading{ text-align:center; padding:60px 0; color:var(--muted); }
   .error-banner{ background:#FBE8E2; color:#9B3A22; border-radius:14px; padding:14px 18px; font-size:.88rem; margin-bottom:18px; }
 
-  .trend-week{ padding:14px 0; border-bottom:1px solid var(--line); }
-  .trend-week:last-child{ border-bottom:none; padding-bottom:0; }
-  .trend-week-label{ font-weight:700; font-size:.9rem; margin-bottom:10px; display:flex; align-items:baseline; gap:8px; }
-  .trend-count{ font-weight:600; color:var(--muted); font-size:.78rem; }
+  .trend-legend{ display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; font-size:.8rem; color:var(--muted); }
+  .trend-legend span{ display:flex; align-items:center; gap:6px; }
+  .trend-legend .dot{ width:10px; height:10px; border-radius:2px; display:inline-block; }
+
+  .trend-table{ width:100%; border-collapse:collapse; font-size:.82rem; margin-top:18px; }
+  .trend-table th, .trend-table td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  .trend-table th{ color:var(--muted); font-weight:700; font-size:.75rem; text-transform:uppercase; letter-spacing:.02em; }
+  .trend-table td.num{ text-align:right; font-weight:600; }
 </style>
 </head>
 <body>
 
-<!-- ================= ADMIN DASHBOARD (no gate — open by design, per request) ================= -->
 <div id="adminView">
   <div class="wrap">
     <div class="header">
       <div>
         <h1 class="admin-title">GMAP Pulse — Insights</h1>
         <p class="subtitle">Live results from your team's check-in survey.</p>
-        <p class="subtitle" style="font-size:.8rem; opacity:.75;">📸 Snapshot data — refreshed periodically, not real-time.</p>
+        <p class="subtitle" style="font-size:.8rem; opacity:.75;">Snapshot data — refreshed periodically, not real-time.</p>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="refresh-btn" id="exportBtn" onclick="exportExcel()">
@@ -101,6 +116,14 @@
         </button>
       </div>
     </div>
+
+    <div class="filter-bar">
+      <select id="cohortFilter" onchange="onFilterChange()"><option value="all">All cohorts</option></select>
+      <select id="hrbpFilter" onchange="onFilterChange()"><option value="all">All HRBPs</option></select>
+      <button class="refresh-btn" onclick="resetFilters()">Reset filters</button>
+    </div>
+    <p class="unmatched-note" id="unmatchedNote"></p>
+
     <div id="errorBanner"></div>
     <div id="adminContent">
       <div class="loading">Loading responses...</div>
@@ -109,27 +132,24 @@
 </div>
 
 <script>
-  /* ==================== CONFIG — fill in ==================== */
-  // Prototype (Option A): reads a plain CSV file sitting in this same repo.
-  // Update it weekly: Sheet > File > Download > CSV, then upload as data.csv
-  // to the repo (same place as index.html). No Google auth involved at all,
-  // so this works for any viewer regardless of domain.
-  // Future: this can be automated (a scheduled job re-exports data.csv
-  // automatically) without changing anything else in this file.
+  /* ==================== CONFIG ==================== */
   const CSV_URL = './data.csv';
+  const ROSTER_URL = './roster.csv';
 
-  /* ==================== DATA LOADING (published CSV — no auth, no gate) ==================== */
   const rotationLabels = { 1:'1: Struggling', 2:'2: Surviving', 3:'3: Maintaining', 4:'4: Progressing', 5:'5: Thriving' };
   const workloadLabels = { 1:'1: Overwhelmed', 2:'2: Heavy', 3:'3: Manageable', 4:'4: Comfortable', 5:'5: Very light' };
   const supportedLabels = { 1:'1: Unsupported', 2:'2: Somewhat unsupported', 3:'3: Neutral', 4:'4: Mostly supported', 5:'5: Fully supported' };
-  const supportedOrder = [1,2,3,4,5];
   const rotationEmojiMap = {1:'😖',2:'😕',3:'😐',4:'🙂',5:'😄'};
   const workloadEmojiMap = {1:'🥵',2:'😣',3:'😌',4:'🙂',5:'😎'};
   const supportedEmojiMap = {1:'😞',2:'😕',3:'😐',4:'🙂',5:'🤝'};
   const TARGET = 30;
-  let lastResponses = [];
 
-  // Reads the leading integer off strings like "4: Progressing" — robust even if descriptor text changes later.
+  let allResponses = [];
+  let rosterIndex = { byEmail:{}, cohorts:[], hrbps:[] };
+  let lastResponses = [];
+  let mainTrendChart = null;
+  let sparklineCharts = { rotation:null, workload:null, supported:null };
+
   function scoreFromLabel(v){
     if(v === undefined || v === null) return NaN;
     const n = parseInt(String(v).trim(), 10);
@@ -146,7 +166,7 @@
     const iRotation = idx('How are you feeling about your rotation this week?');
     const iWorkload = idx('How manageable has your workload felt this week?');
     const iSupported = idx('How supported have you felt by your Reporting Manager/team this week?');
-    const iHighlight = idx("Anything you\u2019d like to highlight from this week?");
+    const iHighlight = idx('Is there anything you\u2019d like to flag to us this week?');
     const iId = idx('id (internal \u2014 do not use)');
     const iWeek = idx('week (internal)');
 
@@ -156,12 +176,89 @@
         id: iId > -1 ? r[iId] || '' : '',
         ts: iTs > -1 ? r[iTs] || '' : '',
         week: iWeek > -1 ? r[iWeek] || '' : '',
-        email: iEmail > -1 ? r[iEmail] || '' : '',
+        email: iEmail > -1 ? (r[iEmail] || '').trim() : '',
         rotation: scoreFromLabel(iRotation > -1 ? r[iRotation] : ''),
         workload: scoreFromLabel(iWorkload > -1 ? r[iWorkload] : ''),
         supported: scoreFromLabel(iSupported > -1 ? r[iSupported] : ''),
         highlight: iHighlight > -1 ? r[iHighlight] || '' : ''
       }));
+  }
+
+  function buildRosterIndex(rows){
+    if(!rows || rows.length < 2) return { byEmail:{}, cohorts:[], hrbps:[] };
+    const headers = rows[0].map(h => (h || '').trim());
+    const idx = (name) => headers.indexOf(name);
+    const iCohort = idx('GMAP Cohort');
+    const iName = idx('Name');
+    const iEmail = idx('Email');
+    const iHrbp = idx('HRBP');
+
+    const byEmail = {};
+    const cohortSet = new Set();
+    const hrbpSet = new Set();
+
+    rows.slice(1).forEach(r => {
+      if(!r.length || iEmail === -1 || !r[iEmail]) return;
+      const key = r[iEmail].trim().toLowerCase();
+      const cohort = iCohort > -1 ? (r[iCohort] || '').trim() : '';
+      const hrbp = iHrbp > -1 ? (r[iHrbp] || '').trim() : '';
+      const name = iName > -1 ? (r[iName] || '').trim() : '';
+      byEmail[key] = { cohort, hrbp, name };
+      if(cohort) cohortSet.add(cohort);
+      if(hrbp) hrbpSet.add(hrbp);
+    });
+
+    return {
+      byEmail,
+      cohorts: Array.from(cohortSet).sort(),
+      hrbps: Array.from(hrbpSet).sort()
+    };
+  }
+
+  function joinWithRoster(responses, index){
+    return responses.map(r => {
+      const key = (r.email || '').trim().toLowerCase();
+      const match = index.byEmail[key];
+      return {
+        ...r,
+        cohort: match ? match.cohort : null,
+        hrbp: match ? match.hrbp : null,
+        maName: match ? match.name : null,
+        unmatched: !match
+      };
+    });
+  }
+
+  function populateFilterOptions(index){
+    const cohortSel = document.getElementById('cohortFilter');
+    const hrbpSel = document.getElementById('hrbpFilter');
+    cohortSel.innerHTML = '<option value="all">All cohorts</option>' +
+      index.cohorts.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    hrbpSel.innerHTML = '<option value="all">All HRBPs</option>' +
+      index.hrbps.map(h => `<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`).join('');
+  }
+
+  function getFilteredResponses(){
+    const cohort = document.getElementById('cohortFilter').value;
+    const hrbp = document.getElementById('hrbpFilter').value;
+    if(cohort === 'all' && hrbp === 'all') return allResponses;
+    return allResponses.filter(r => {
+      if(r.unmatched) return false;
+      if(cohort !== 'all' && r.cohort !== cohort) return false;
+      if(hrbp !== 'all' && r.hrbp !== hrbp) return false;
+      return true;
+    });
+  }
+
+  function onFilterChange(){
+    lastResponses = getFilteredResponses();
+    renderAdmin(lastResponses);
+  }
+
+  function resetFilters(){
+    document.getElementById('cohortFilter').value = 'all';
+    document.getElementById('hrbpFilter').value = 'all';
+    onFilterChange();
   }
 
   function loadAdminData(){
@@ -170,39 +267,41 @@
     errorBanner.innerHTML = '';
     if(btn){ btn.classList.add('spinning'); btn.disabled = true; }
 
-    if(CSV_URL.indexOf('PASTE_YOUR') === 0){
-      errorBanner.innerHTML = `<div class="error-banner">CSV_URL not configured yet in the page code.</div>`;
-      if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
-      return;
-    }
-
-    Papa.parse(CSV_URL, {
-      download: true,
-      complete: (result) => {
-        try{
-          const responses = rowsToResponses(result.data || []);
-          lastResponses = responses;
-          renderAdmin(responses);
-        }catch(err){
-          console.error('Parse error:', err);
-          errorBanner.innerHTML = `<div class="error-banner">Couldn't process the data — check the CSV_URL and sheet headers.</div>`;
-        }finally{
-          if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
-        }
-      },
-      error: (err) => {
-        console.error('Load error:', err);
-        lastResponses = [];
-        errorBanner.innerHTML = `<div class="error-banner">Couldn't load responses right now — check that CSV_URL is correct and published.</div>`;
-        document.getElementById('adminContent').innerHTML = '';
-        if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
-      }
+    const parseCsv = (url) => new Promise((resolve, reject) => {
+      Papa.parse(url, { download: true, complete: (res) => resolve(res.data || []), error: reject });
     });
+
+    Promise.all([parseCsv(CSV_URL), parseCsv(ROSTER_URL)])
+      .then(([dataRows, rosterRows]) => {
+        rosterIndex = buildRosterIndex(rosterRows);
+        const responses = rowsToResponses(dataRows);
+        allResponses = joinWithRoster(responses, rosterIndex);
+        populateFilterOptions(rosterIndex);
+
+        const unmatchedCount = allResponses.filter(r => r.unmatched).length;
+        const note = document.getElementById('unmatchedNote');
+        note.textContent = unmatchedCount > 0
+          ? `${unmatchedCount} response${unmatchedCount === 1 ? '' : 's'} couldn't be matched to the roster (check for email typos).`
+          : '';
+
+        lastResponses = getFilteredResponses();
+        renderAdmin(lastResponses);
+      })
+      .catch((err) => {
+        console.error('Load error:', err);
+        allResponses = [];
+        lastResponses = [];
+        errorBanner.innerHTML = `<div class="error-banner">Couldn't load responses — check that data.csv and roster.csv exist and are correctly formatted.</div>`;
+        document.getElementById('adminContent').innerHTML = '';
+      })
+      .finally(() => {
+        if(btn){ btn.classList.remove('spinning'); btn.disabled = false; }
+      });
   }
 
   window.onload = loadAdminData;
 
-  /* ==================== RENDERING (unchanged logic from prior build) ==================== */
+  /* ==================== SHARED HELPERS ==================== */
   function avg(nums){ if(!nums.length) return 0; return nums.reduce((a,b)=>a+b,0) / nums.length; }
   function pulseEmojiFor(score){
     if(score >= 4.3) return '🤩'; if(score >= 3.5) return '🙂';
@@ -216,18 +315,166 @@
       ${emoji ? `<span class="bar-emoji">${emoji}</span>` : ''}
       <span class="bar-label">${labelText}</span>
       <span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span>
-      <span class="bar-count">${count} · ${pct}%</span>
+      <span class="bar-count">${count} \u00b7 ${pct}%</span>
     `;
     containerEl.appendChild(row);
   }
-  function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+  function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str == null ? '' : str; return d.innerHTML; }
 
+  // Monday of a given ISO week label like "2026-W37"
+  function isoWeekToMonday(weekLabel){
+    const m = /^(\d{4})-W(\d{1,2})$/.exec(weekLabel || '');
+    if(!m) return null;
+    const year = parseInt(m[1], 10), wk = parseInt(m[2], 10);
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const jan4Day = jan4.getUTCDay() || 7;
+    const week1Monday = new Date(jan4);
+    week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+    const monday = new Date(week1Monday);
+    monday.setUTCDate(week1Monday.getUTCDate() + (wk - 1) * 7);
+    return monday;
+  }
+
+  function computeWeeklyBuckets(responses){
+    const byWeek = {};
+    responses.forEach(r => {
+      const wk = r.week || 'Unlabeled';
+      if(!byWeek[wk]) byWeek[wk] = { rotation:[], workload:[], supported:[], count:0 };
+      if(typeof r.rotation === 'number' && !isNaN(r.rotation)) byWeek[wk].rotation.push(r.rotation);
+      if(typeof r.workload === 'number' && !isNaN(r.workload)) byWeek[wk].workload.push(r.workload);
+      if(typeof r.supported === 'number' && !isNaN(r.supported)) byWeek[wk].supported.push(r.supported);
+      byWeek[wk].count++;
+    });
+    const weekKeys = Object.keys(byWeek).sort();
+    return weekKeys.map(wk => {
+      const b = byWeek[wk];
+      const monday = isoWeekToMonday(wk);
+      const label = monday
+        ? 'Week of ' + monday.toLocaleDateString(undefined, { month:'short', day:'numeric' })
+        : wk;
+      return {
+        week: wk, label,
+        rotation: avg(b.rotation), workload: avg(b.workload), supported: avg(b.supported),
+        count: b.count
+      };
+    });
+  }
+
+  function deltaHtml(current, previous, unit){
+    if(previous === undefined || previous === null || isNaN(previous)){
+      return `<span class="delta-flat">\u2014</span>`;
+    }
+    const d = current - previous;
+    const rounded = Math.round(d * 10) / 10;
+    if(Math.abs(rounded) < 0.05){
+      return `<span class="delta-flat">0.0 ${unit}</span>`;
+    }
+    const cls = rounded > 0 ? 'delta-up' : 'delta-down';
+    const sign = rounded > 0 ? '+' : '';
+    const arrow = rounded > 0 ? '\u2191' : '\u2193';
+    return `<span class="${cls}">${arrow} ${sign}${rounded.toFixed(1)} ${unit}</span>`;
+  }
+
+  function renderSparkline(canvasId, chartRefKey, values, color){
+    const ctx = document.getElementById(canvasId);
+    if(!ctx) return;
+    if(sparklineCharts[chartRefKey]) sparklineCharts[chartRefKey].destroy();
+    sparklineCharts[chartRefKey] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: values.map((_, i) => i),
+        datasets: [{ data: values, borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.35, fill: false }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { display:false }, y: { display:false, min:1, max:5 } },
+        plugins: { legend: { display:false }, tooltip: { enabled:false } }
+      }
+    });
+  }
+
+  function renderTrendChart(buckets){
+    const ctx = document.getElementById('trendChart');
+    if(!ctx) return;
+    if(mainTrendChart) mainTrendChart.destroy();
+    if(buckets.length === 0) return;
+
+    const maxCount = Math.max(1, ...buckets.map(b => b.count));
+
+    mainTrendChart = new Chart(ctx, {
+      data: {
+        labels: buckets.map(b => b.label),
+        datasets: [
+          {
+            type: 'bar', label: 'Responses', data: buckets.map(b => b.count),
+            backgroundColor: '#DCEAE5', yAxisID: 'yCount', order: 3,
+            borderRadius: 4, maxBarThickness: 36
+          },
+          {
+            type: 'line', label: 'Rotation', data: buckets.map(b => b.rotation),
+            borderColor: '#2a78d6', backgroundColor: '#2a78d6', yAxisID: 'y',
+            pointRadius: 4, pointBorderColor: '#FBF8F2', pointBorderWidth: 2, borderWidth: 2, tension: 0.3, order: 1
+          },
+          {
+            type: 'line', label: 'Workload', data: buckets.map(b => b.workload),
+            borderColor: '#eb6834', backgroundColor: '#eb6834', yAxisID: 'y',
+            pointRadius: 4, pointBorderColor: '#FBF8F2', pointBorderWidth: 2, borderWidth: 2, tension: 0.3, borderDash: [6,3], order: 1
+          },
+          {
+            type: 'line', label: 'Supported', data: buckets.map(b => b.supported),
+            borderColor: '#1baf7a', backgroundColor: '#1baf7a', yAxisID: 'y',
+            pointRadius: 4, pointBorderColor: '#FBF8F2', pointBorderWidth: 2, borderWidth: 2, tension: 0.3, borderDash: [2,3], order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (item) => item.dataset.label === 'Responses'
+                ? `${item.formattedValue} response${item.raw === 1 ? '' : 's'}`
+                : `${item.dataset.label}: ${item.formattedValue}`
+            }
+          }
+        },
+        scales: {
+          y: { min:1, max:5, grid: { color:'#E7E1D3' }, ticks: { color:'#6B7A72' } },
+          yCount: { min:0, max: maxCount * 3, display:false },
+          x: { grid: { display:false }, ticks: { color:'#6B7A72' } }
+        }
+      }
+    });
+  }
+
+  function renderTrendTable(buckets){
+    if(buckets.length === 0) return '<div class="empty-state">No data yet.</div>';
+    const rows = buckets.map(b => `
+      <tr>
+        <td>${escapeHtml(b.label)}</td>
+        <td class="num">${b.rotation ? b.rotation.toFixed(1) : '\u2013'}</td>
+        <td class="num">${b.workload ? b.workload.toFixed(1) : '\u2013'}</td>
+        <td class="num">${b.supported ? b.supported.toFixed(1) : '\u2013'}</td>
+        <td class="num">${b.count}</td>
+      </tr>
+    `).join('');
+    return `
+      <table class="trend-table">
+        <thead><tr><th>Week</th><th>Rotation</th><th>Workload</th><th>Supported</th><th>Responses</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  /* ==================== MAIN RENDER ==================== */
   function renderAdmin(responses){
     const content = document.getElementById('adminContent');
     const total = responses.length;
 
     if(total === 0){
-      content.innerHTML = `<div class="admin-card"><div class="empty-state">No responses yet. Once your team starts filling out the survey, insights will show up here.</div></div>`;
+      content.innerHTML = `<div class="admin-card"><div class="empty-state">No responses match this filter yet.</div></div>`;
       return;
     }
 
@@ -239,6 +486,10 @@
     const supportedAvg = avg(supportedVals);
     const overallAvg = avg([rotationAvg, workloadAvg, supportedAvg]);
 
+    const buckets = computeWeeklyBuckets(responses);
+    const current = buckets[buckets.length - 1];
+    const previous = buckets.length > 1 ? buckets[buckets.length - 2] : null;
+
     const highlights = responses
       .filter(r => r.highlight && r.highlight.trim().length > 0)
       .sort((a,b) => new Date(b.ts) - new Date(a.ts));
@@ -248,10 +499,9 @@
     content.innerHTML = `
       <div class="pulse-hero">
         <div class="pulse-left">
-          <div class="pulse-emoji">${pulseEmojiFor(overallAvg)}</div>
           <div>
             <div class="pulse-number">${overallAvg.toFixed(1)} / 5</div>
-            <div class="pulse-label">Overall team pulse (rotation + workload + supported)</div>
+            <div class="pulse-label">Overall team pulse (rotation + workload + supported) \u00b7 ${pulseEmojiFor(overallAvg)}</div>
           </div>
         </div>
         <div class="pulse-right">
@@ -260,31 +510,59 @@
           <div class="target-track"><div class="target-fill" style="width:${targetPct}%"></div></div>
         </div>
       </div>
-      <div class="grid-2">
-        <div class="admin-card">
-          <div class="card-title">Rotation feeling</div>
-          <div class="card-sub">Struggling (1) → Thriving (5)</div>
-          <div class="avg-row"><span class="avg-number">${rotationAvg.toFixed(1)}</span><span class="avg-out-of">average out of 5</span></div>
-          <div id="rotationDist"></div>
+
+      <div class="grid-3">
+        <div class="metric-card">
+          <div class="card-title" style="font-size:.95rem;">Rotation</div>
+          <div class="avg-row"><span class="avg-number">${rotationAvg.toFixed(1)}</span><span class="avg-out-of">/5</span></div>
+          <div class="delta-row">${current ? deltaHtml(current.rotation, previous ? previous.rotation : null, 'pts') : ''}</div>
+          <div class="sparkline-wrap"><canvas id="sparkRotation"></canvas></div>
         </div>
-        <div class="admin-card">
-          <div class="card-title">Workload manageability</div>
-          <div class="card-sub">Overwhelmed (1) → Very light (5)</div>
-          <div class="avg-row"><span class="avg-number">${workloadAvg.toFixed(1)}</span><span class="avg-out-of">average out of 5</span></div>
-          <div id="workloadDist"></div>
+        <div class="metric-card">
+          <div class="card-title" style="font-size:.95rem;">Workload</div>
+          <div class="avg-row"><span class="avg-number">${workloadAvg.toFixed(1)}</span><span class="avg-out-of">/5</span></div>
+          <div class="delta-row">${current ? deltaHtml(current.workload, previous ? previous.workload : null, 'pts') : ''}</div>
+          <div class="sparkline-wrap"><canvas id="sparkWorkload"></canvas></div>
         </div>
+        <div class="metric-card">
+          <div class="card-title" style="font-size:.95rem;">Supported</div>
+          <div class="avg-row"><span class="avg-number">${supportedAvg.toFixed(1)}</span><span class="avg-out-of">/5</span></div>
+          <div class="delta-row">${current ? deltaHtml(current.supported, previous ? previous.supported : null, 'pts') : ''}</div>
+          <div class="sparkline-wrap"><canvas id="sparkSupported"></canvas></div>
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <div class="card-title">Rotation feeling</div>
+        <div class="card-sub">Struggling (1) \u2192 Thriving (5)</div>
+        <div id="rotationDist"></div>
+      </div>
+      <div class="admin-card">
+        <div class="card-title">Workload manageability</div>
+        <div class="card-sub">Overwhelmed (1) \u2192 Very light (5)</div>
+        <div id="workloadDist"></div>
       </div>
       <div class="admin-card">
         <div class="card-title">Supported by RM/team</div>
-        <div class="card-sub">Unsupported (1) → Fully supported (5)</div>
-        <div class="avg-row"><span class="avg-number">${supportedAvg.toFixed(1)}</span><span class="avg-out-of">average out of 5</span></div>
+        <div class="card-sub">Unsupported (1) \u2192 Fully supported (5)</div>
         <div id="supportedDist"></div>
       </div>
+
       <div class="admin-card">
         <div class="card-title">Trend over time</div>
-        <div class="card-sub">Weekly averages for rotation feeling and workload</div>
-        <div id="trendWeeks"></div>
+        <div class="card-sub">Weekly averages, with response volume as context</div>
+        <div class="trend-legend">
+          <span><span class="dot" style="background:#2a78d6"></span>Rotation</span>
+          <span><span class="dot" style="background:#eb6834"></span>Workload</span>
+          <span><span class="dot" style="background:#1baf7a"></span>Supported</span>
+          <span><span class="dot" style="background:#DCEAE5"></span>Responses (volume)</span>
+        </div>
+        <div style="position:relative; width:100%; height:280px;">
+          <canvas id="trendChart" role="img" aria-label="Line chart of weekly averages for rotation, workload, and supported, with response counts as background bars"></canvas>
+        </div>
+        ${renderTrendTable(buckets)}
       </div>
+
       <div class="admin-card">
         <div class="card-title">Highlights from the team</div>
         <div class="card-sub">${highlights.length} of ${total} people left a note, most recent first</div>
@@ -294,14 +572,15 @@
 
     const rotDist = document.getElementById('rotationDist');
     for(let v=5; v>=1; v--){ renderDistBar(rotDist, rotationVals.filter(x=>x===v).length, rotationVals.length, `${v}`, rotationEmojiMap[v]); }
-
     const workDist = document.getElementById('workloadDist');
     for(let v=5; v>=1; v--){ renderDistBar(workDist, workloadVals.filter(x=>x===v).length, workloadVals.length, `${v}`, workloadEmojiMap[v]); }
-
     const supDist = document.getElementById('supportedDist');
     for(let v=5; v>=1; v--){ renderDistBar(supDist, supportedVals.filter(x=>x===v).length, supportedVals.length, `${v}`, supportedEmojiMap[v]); }
 
-    renderTrend(responses);
+    renderSparkline('sparkRotation', 'rotation', buckets.map(b => b.rotation), '#2a78d6');
+    renderSparkline('sparkWorkload', 'workload', buckets.map(b => b.workload), '#eb6834');
+    renderSparkline('sparkSupported', 'supported', buckets.map(b => b.supported), '#1baf7a');
+    renderTrendChart(buckets);
 
     const highlightsList = document.getElementById('highlightsList');
     if(highlights.length === 0){
@@ -312,71 +591,17 @@
         div.className = 'highlight-card';
         const date = new Date(r.ts);
         const dateStr = isNaN(date) ? '' : date.toLocaleDateString(undefined, { month:'short', day:'numeric' });
-        div.innerHTML = `"${escapeHtml(r.highlight)}"<span class="highlight-meta">${dateStr}${r.email ? ' · ' + escapeHtml(r.email) : ''}</span>`;
+        const who = r.maName || r.email || '';
+        div.innerHTML = `"${escapeHtml(r.highlight)}"<span class="highlight-meta">${dateStr}${who ? ' \u00b7 ' + escapeHtml(who) : ''}</span>`;
         highlightsList.appendChild(div);
       });
     }
   }
 
-  function renderTrend(responses){
-    const container = document.getElementById('trendWeeks');
-    const byWeek = {};
-    responses.forEach(r => {
-      const wk = r.week || 'Unlabeled';
-      if(!byWeek[wk]) byWeek[wk] = { rotation:[], workload:[], supported:[], tsList:[] };
-      if(typeof r.rotation === 'number' && !isNaN(r.rotation)) byWeek[wk].rotation.push(r.rotation);
-      if(typeof r.workload === 'number' && !isNaN(r.workload)) byWeek[wk].workload.push(r.workload);
-      if(typeof r.supported === 'number' && !isNaN(r.supported)) byWeek[wk].supported.push(r.supported);
-      if(r.ts) byWeek[wk].tsList.push(new Date(r.ts));
-    });
-
-    const weekKeys = Object.keys(byWeek).sort();
-    if(weekKeys.length === 0){
-      container.innerHTML = `<div class="empty-state">No data yet.</div>`;
-      return;
-    }
-
-    container.innerHTML = '';
-    weekKeys.forEach(wk => {
-      const bucket = byWeek[wk];
-      const rotAvg = avg(bucket.rotation);
-      const workAvg = avg(bucket.workload);
-      const supAvg = avg(bucket.supported);
-      const earliest = bucket.tsList.length ? new Date(Math.min(...bucket.tsList.map(d => d.getTime()))) : null;
-      const dateLabel = earliest && !isNaN(earliest)
-        ? `Week of ${earliest.toLocaleDateString(undefined, { month:'short', day:'numeric' })}`
-        : wk;
-
-      const row = document.createElement('div');
-      row.className = 'trend-week';
-      row.innerHTML = `
-        <div class="trend-week-label">${dateLabel} <span class="trend-count">(${bucket.tsList.length} response${bucket.tsList.length === 1 ? '' : 's'})</span></div>
-        <div class="bar-row">
-          <span class="bar-emoji">${rotationEmojiMap[Math.round(rotAvg)] || '·'}</span>
-          <span class="bar-label">Rotation</span>
-          <span class="bar-track"><span class="bar-fill" style="width:${(rotAvg/5*100).toFixed(0)}%"></span></span>
-          <span class="bar-count">${rotAvg ? rotAvg.toFixed(1) : '–'}</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-emoji">${workloadEmojiMap[Math.round(workAvg)] || '·'}</span>
-          <span class="bar-label">Workload</span>
-          <span class="bar-track"><span class="bar-fill" style="width:${(workAvg/5*100).toFixed(0)}%"></span></span>
-          <span class="bar-count">${workAvg ? workAvg.toFixed(1) : '–'}</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-emoji">${supportedEmojiMap[Math.round(supAvg)] || '·'}</span>
-          <span class="bar-label">Supported</span>
-          <span class="bar-track"><span class="bar-fill" style="width:${(supAvg/5*100).toFixed(0)}%"></span></span>
-          <span class="bar-count">${supAvg ? supAvg.toFixed(1) : '–'}</span>
-        </div>
-      `;
-      container.appendChild(row);
-    });
-  }
-
+  /* ==================== EXPORT ==================== */
   function exportExcel(){
     if(!lastResponses || lastResponses.length === 0){
-      alert('No responses loaded yet — hit Refresh first, then try exporting.');
+      alert('No responses to export in the current filter.');
       return;
     }
     if(typeof XLSX === 'undefined'){
@@ -392,6 +617,8 @@
         Timestamp: r.ts || '',
         Week: r.week || '',
         Email: r.email || '',
+        Cohort: r.cohort || '',
+        HRBP: r.hrbp || '',
         'Rotation (1-5)': typeof r.rotation === 'number' && !isNaN(r.rotation) ? r.rotation : '',
         'Workload (1-5)': typeof r.workload === 'number' && !isNaN(r.workload) ? r.workload : '',
         'Supported (1-5)': typeof r.supported === 'number' && !isNaN(r.supported) ? r.supported : '',
@@ -404,9 +631,9 @@
 
     const summaryRows = [
       { Metric: 'Total responses', Value: lastResponses.length },
-      { Metric: 'Rotation feeling — average (1-5)', Value: rotationVals.length ? Number(avg(rotationVals).toFixed(2)) : '' },
-      { Metric: 'Workload manageability — average (1-5)', Value: workloadVals.length ? Number(avg(workloadVals).toFixed(2)) : '' },
-      { Metric: 'Supported by RM/team — average (1-5)', Value: supportedVals.length ? Number(avg(supportedVals).toFixed(2)) : '' }
+      { Metric: 'Rotation feeling \u2014 average (1-5)', Value: rotationVals.length ? Number(avg(rotationVals).toFixed(2)) : '' },
+      { Metric: 'Workload manageability \u2014 average (1-5)', Value: workloadVals.length ? Number(avg(workloadVals).toFixed(2)) : '' },
+      { Metric: 'Supported by RM/team \u2014 average (1-5)', Value: supportedVals.length ? Number(avg(supportedVals).toFixed(2)) : '' }
     ];
 
     const wb = XLSX.utils.book_new();
