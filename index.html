@@ -74,11 +74,22 @@
   .sparkline-wrap{ position:relative; width:100%; height:44px; }
 
   .bar-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-  .bar-emoji{ width:26px; text-align:center; font-size:1.1rem; flex-shrink:0; }
   .bar-label{ width:150px; flex-shrink:0; font-size:.85rem; color:var(--ink); font-weight:600; }
   .bar-track{ flex:1; height:12px; border-radius:999px; background:var(--sky); overflow:hidden; }
   .bar-fill{ height:100%; border-radius:999px; background:var(--accent); transition:width .5s ease; }
   .bar-count{ width:64px; text-align:right; flex-shrink:0; font-size:.8rem; color:var(--muted); font-weight:600; }
+
+  .seg-bar{ display:flex; width:100%; height:30px; border-radius:10px; overflow:hidden; background:var(--line); }
+  .seg{ display:flex; align-items:center; justify-content:center; font-size:.74rem; font-weight:700; color:#fff; white-space:nowrap; transition:width .5s ease; }
+  .seg-low{ background:var(--danger); }
+  .seg-mid{ background:var(--warm); }
+  .seg-high{ background:var(--accent); }
+  .seg-legend{ display:flex; flex-wrap:wrap; gap:16px; margin-top:12px; font-size:.8rem; color:var(--muted); }
+  .seg-legend-item{ display:flex; align-items:center; gap:6px; }
+  .seg-dot{ width:9px; height:9px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .seg-dot-low{ background:var(--danger); }
+  .seg-dot-mid{ background:var(--warm); }
+  .seg-dot-high{ background:var(--accent); }
 
   .highlights-list{ display:flex; flex-direction:column; gap:12px; max-height:520px; overflow-y:auto; }
   .highlight-card{ background:var(--warm-soft); border-radius:14px; padding:14px 16px; font-size:.92rem; line-height:1.5; color:var(--ink); }
@@ -139,10 +150,8 @@
   const rotationLabels = { 1:'1: Struggling', 2:'2: Surviving', 3:'3: Maintaining', 4:'4: Progressing', 5:'5: Thriving' };
   const workloadLabels = { 1:'1: Overwhelmed', 2:'2: Heavy', 3:'3: Manageable', 4:'4: Comfortable', 5:'5: Very light' };
   const supportedLabels = { 1:'1: Unsupported', 2:'2: Somewhat unsupported', 3:'3: Neutral', 4:'4: Mostly supported', 5:'5: Fully supported' };
-  const rotationEmojiMap = {1:'😖',2:'😕',3:'😐',4:'🙂',5:'😄'};
-  const workloadEmojiMap = {1:'🥵',2:'😣',3:'😌',4:'🙂',5:'😎'};
-  const supportedEmojiMap = {1:'😞',2:'😕',3:'😐',4:'🙂',5:'🤝'};
-  const TARGET = 30;
+  // TARGET is computed dynamically from the roster (see getTargetCount()) —
+  // no fixed number here, since roster size changes over time.
 
   let allResponses = [];
   let rosterIndex = { byEmail:{}, cohorts:[], hrbps:[] };
@@ -250,6 +259,21 @@
     });
   }
 
+  // Expected response count = number of MAs in the roster matching the
+  // current filter — so "of X expected" always reflects reality, not a
+  // hardcoded guess.
+  function getTargetCount(){
+    const cohort = document.getElementById('cohortFilter').value;
+    const hrbp = document.getElementById('hrbpFilter').value;
+    const entries = Object.values(rosterIndex.byEmail || {});
+    if(cohort === 'all' && hrbp === 'all') return entries.length;
+    return entries.filter(e => {
+      if(cohort !== 'all' && e.cohort !== cohort) return false;
+      if(hrbp !== 'all' && e.hrbp !== hrbp) return false;
+      return true;
+    }).length;
+  }
+
   function onFilterChange(){
     lastResponses = getFilteredResponses();
     renderAdmin(lastResponses);
@@ -307,17 +331,33 @@
     if(score >= 4.3) return '🤩'; if(score >= 3.5) return '🙂';
     if(score >= 2.5) return '😐'; if(score >= 1.5) return '😕'; return '😖';
   }
-  function renderDistBar(containerEl, count, total, labelText, emoji){
-    const pct = total > 0 ? Math.round((count/total)*100) : 0;
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML = `
-      ${emoji ? `<span class="bar-emoji">${emoji}</span>` : ''}
-      <span class="bar-label">${labelText}</span>
-      <span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span>
-      <span class="bar-count">${count} \u00b7 ${pct}%</span>
+  function renderSegmentedBar(containerEl, values, labels){
+    const total = values.length;
+    if(total === 0){
+      containerEl.innerHTML = `<div class="empty-state">No responses yet.</div>`;
+      return;
+    }
+    const lowCount = values.filter(v => v <= 2).length;
+    const midCount = values.filter(v => v === 3).length;
+    const highCount = values.filter(v => v >= 4).length;
+    const pctLow = Math.round((lowCount/total)*100);
+    const pctMid = Math.round((midCount/total)*100);
+    const pctHigh = 100 - pctLow - pctMid; // avoid rounding gaps not summing to 100
+
+    const showLabel = (pct) => pct >= 10 ? `${pct}%` : '';
+
+    containerEl.innerHTML = `
+      <div class="seg-bar">
+        <div class="seg seg-low" style="width:${pctLow}%">${showLabel(pctLow)}</div>
+        <div class="seg seg-mid" style="width:${pctMid}%">${showLabel(pctMid)}</div>
+        <div class="seg seg-high" style="width:${pctHigh}%">${showLabel(pctHigh)}</div>
+      </div>
+      <div class="seg-legend">
+        <span class="seg-legend-item"><span class="seg-dot seg-dot-low"></span>${labels.low} \u00b7 ${lowCount} \u00b7 ${pctLow}%</span>
+        <span class="seg-legend-item"><span class="seg-dot seg-dot-mid"></span>${labels.mid} \u00b7 ${midCount} \u00b7 ${pctMid}%</span>
+        <span class="seg-legend-item"><span class="seg-dot seg-dot-high"></span>${labels.high} \u00b7 ${highCount} \u00b7 ${pctHigh}%</span>
+      </div>
     `;
-    containerEl.appendChild(row);
   }
   function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str == null ? '' : str; return d.innerHTML; }
 
@@ -441,8 +481,16 @@
           }
         },
         scales: {
-          y: { min:1, max:5, grid: { color:'#E7E1D3' }, ticks: { color:'#6B7A72' } },
-          yCount: { min:0, max: maxCount * 3, display:false },
+          y: {
+            min:1, max:5, position:'left',
+            title: { display:true, text:'Average score (1\u20135)', color:'#6B7A72', font:{ size:11 } },
+            grid: { color:'#E7E1D3' }, ticks: { color:'#6B7A72' }
+          },
+          yCount: {
+            min:0, max: Math.ceil(maxCount * 1.2), position:'right',
+            title: { display:true, text:'Responses', color:'#6B7A72', font:{ size:11 } },
+            grid: { display:false }, ticks: { color:'#6B7A72', precision:0 }
+          },
           x: { grid: { display:false }, ticks: { color:'#6B7A72' } }
         }
       }
@@ -494,7 +542,8 @@
       .filter(r => r.highlight && r.highlight.trim().length > 0)
       .sort((a,b) => new Date(b.ts) - new Date(a.ts));
 
-    const targetPct = Math.min(100, Math.round((total/TARGET)*100));
+    const target = Math.max(1, getTargetCount());
+    const targetPct = Math.min(100, Math.round((total/target)*100));
 
     content.innerHTML = `
       <div class="pulse-hero">
@@ -506,26 +555,29 @@
         </div>
         <div class="pulse-right">
           <div class="response-count">${total}</div>
-          <div class="response-target">of ${TARGET} expected responses</div>
+          <div class="response-target">of ${target} expected responses</div>
           <div class="target-track"><div class="target-fill" style="width:${targetPct}%"></div></div>
         </div>
       </div>
 
       <div class="grid-3">
         <div class="metric-card">
-          <div class="card-title" style="font-size:.95rem;">Rotation</div>
+          <div class="card-title" style="font-size:.95rem; margin-bottom:2px;">Rotation</div>
+          <div class="card-sub" style="margin-bottom:10px; font-size:.72rem;">Struggling (1) \u2192 Thriving (5)</div>
           <div class="avg-row"><span class="avg-number">${rotationAvg.toFixed(1)}</span><span class="avg-out-of">/5</span></div>
           <div class="delta-row">${current ? deltaHtml(current.rotation, previous ? previous.rotation : null, 'pts') : ''}</div>
           <div class="sparkline-wrap"><canvas id="sparkRotation"></canvas></div>
         </div>
         <div class="metric-card">
-          <div class="card-title" style="font-size:.95rem;">Workload</div>
+          <div class="card-title" style="font-size:.95rem; margin-bottom:2px;">Workload</div>
+          <div class="card-sub" style="margin-bottom:10px; font-size:.72rem;">Overwhelmed (1) \u2192 Very light (5)</div>
           <div class="avg-row"><span class="avg-number">${workloadAvg.toFixed(1)}</span><span class="avg-out-of">/5</span></div>
           <div class="delta-row">${current ? deltaHtml(current.workload, previous ? previous.workload : null, 'pts') : ''}</div>
           <div class="sparkline-wrap"><canvas id="sparkWorkload"></canvas></div>
         </div>
         <div class="metric-card">
-          <div class="card-title" style="font-size:.95rem;">Supported</div>
+          <div class="card-title" style="font-size:.95rem; margin-bottom:2px;">Supported</div>
+          <div class="card-sub" style="margin-bottom:10px; font-size:.72rem;">Unsupported (1) \u2192 Fully supported (5)</div>
           <div class="avg-row"><span class="avg-number">${supportedAvg.toFixed(1)}</span><span class="avg-out-of">/5</span></div>
           <div class="delta-row">${current ? deltaHtml(current.supported, previous ? previous.supported : null, 'pts') : ''}</div>
           <div class="sparkline-wrap"><canvas id="sparkSupported"></canvas></div>
@@ -571,11 +623,11 @@
     `;
 
     const rotDist = document.getElementById('rotationDist');
-    for(let v=5; v>=1; v--){ renderDistBar(rotDist, rotationVals.filter(x=>x===v).length, rotationVals.length, `${v}`, rotationEmojiMap[v]); }
+    renderSegmentedBar(rotDist, rotationVals, { low:'Struggling (1\u20132)', mid:'Maintaining (3)', high:'Thriving (4\u20135)' });
     const workDist = document.getElementById('workloadDist');
-    for(let v=5; v>=1; v--){ renderDistBar(workDist, workloadVals.filter(x=>x===v).length, workloadVals.length, `${v}`, workloadEmojiMap[v]); }
+    renderSegmentedBar(workDist, workloadVals, { low:'Overwhelmed (1\u20132)', mid:'Manageable (3)', high:'Comfortable (4\u20135)' });
     const supDist = document.getElementById('supportedDist');
-    for(let v=5; v>=1; v--){ renderDistBar(supDist, supportedVals.filter(x=>x===v).length, supportedVals.length, `${v}`, supportedEmojiMap[v]); }
+    renderSegmentedBar(supDist, supportedVals, { low:'Unsupported (1\u20132)', mid:'Neutral (3)', high:'Supported (4\u20135)' });
 
     renderSparkline('sparkRotation', 'rotation', buckets.map(b => b.rotation), '#2a78d6');
     renderSparkline('sparkWorkload', 'workload', buckets.map(b => b.workload), '#eb6834');
@@ -592,7 +644,8 @@
         const date = new Date(r.ts);
         const dateStr = isNaN(date) ? '' : date.toLocaleDateString(undefined, { month:'short', day:'numeric' });
         const who = r.maName || r.email || '';
-        div.innerHTML = `"${escapeHtml(r.highlight)}"<span class="highlight-meta">${dateStr}${who ? ' \u00b7 ' + escapeHtml(who) : ''}</span>`;
+        const hrbpTag = r.hrbp ? ` (HRBP: ${escapeHtml(r.hrbp)})` : '';
+        div.innerHTML = `"${escapeHtml(r.highlight)}"<span class="highlight-meta">${dateStr}${who ? ' \u00b7 ' + escapeHtml(who) + hrbpTag : ''}</span>`;
         highlightsList.appendChild(div);
       });
     }
